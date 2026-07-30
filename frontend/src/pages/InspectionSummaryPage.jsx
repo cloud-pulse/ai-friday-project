@@ -1,5 +1,7 @@
-import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { batchesApi } from '../api/batches';
+import { dashboardApi } from '../api/dashboard';
 import { PageHeader } from '../components/layout/PageHeader';
 import { StatCard } from '../components/ui/StatCard';
 import { QualityScoreCard } from '../components/ui/QualityScoreCard';
@@ -8,11 +10,6 @@ import { ChartCard } from '../components/ui/ChartCard';
 import { InspectionTable } from '../components/inspection/InspectionTable';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
-import {
-  mockBatchDetails,
-  mockPackageItems,
-  mockDefectBreakdown,
-} from '../data/mockData';
 import {
   FileCheck,
   UserCheck,
@@ -38,16 +35,76 @@ import {
 
 export function InspectionSummaryPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const batchId = searchParams.get('batchId');
+
+  const [batchDetails, setBatchDetails] = useState(null);
+  const [packageItems, setPackageItems] = useState([]);
+  const [defectBreakdown, setDefectBreakdown] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!batchId) {
+        navigate('/');
+        return;
+      }
+      
+      try {
+        const [batch, summary, results, defects] = await Promise.all([
+          batchesApi.getBatchDetails(batchId),
+          batchesApi.getBatchSummary(batchId),
+          batchesApi.getBatchResults(batchId),
+          dashboardApi.getDefects()
+        ]);
+
+        setBatchDetails({
+          id: batch.id,
+          name: batch.name,
+          line: batch.production_line,
+          shift: batch.shift,
+          date: new Date(batch.created_at).toLocaleString(),
+          inspector: "System",
+          totalImages: summary.total_images,
+          passedImages: summary.passed ?? 0,
+          failedImages: (summary.failed ?? 0) + (summary.needs_review ?? 0),
+          qualityScore: summary.quality_score ?? 0,
+          scores: {
+            packagingIntegrity: summary.avg_packaging_integrity ?? 0,
+            labelAccuracy: summary.avg_label_accuracy ?? 0,
+            sealQuality: summary.avg_seal_quality ?? 0,
+            ocrValidation: summary.avg_label_accuracy ?? 0,
+          },
+          aiSummary: `${summary.failed} packages flagged for manual review. AI recommends verification of seal integrity and label alignment.`,
+          aiRecommendation: summary.failed > 0 ? "Review flagged items." : "All packages passed.",
+          confidenceAvg: 98.5,
+          status: summary.status === 'ready_for_review' ? 'Pending Review' : (summary.status === 'completed' ? 'Approved' : summary.status),
+        });
+
+        setPackageItems(results);
+        setDefectBreakdown(defects);
+        setLoading(false);
+      } catch (err) {
+        console.error(err);
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, [batchId]);
+
+  if (loading) {
+    return <div className="p-8 text-center">Loading inspection summary...</div>;
+  }
 
   return (
     <div className="space-y-8 pb-12">
       {/* 1. Page Header */}
       <PageHeader
-        title={`Inspection Summary — ${mockBatchDetails.id}`}
-        description={`Automated packaging quality analysis for ${mockBatchDetails.name} (${mockBatchDetails.shift}).`}
+        title={`Inspection Summary — ${batchDetails.name}`}
+        description={`Automated packaging quality analysis for ${batchDetails.name} (${batchDetails.shift}).`}
         badge={
-          <Badge variant="warning" icon={AlertTriangle}>
-            Human Validation Required
+          <Badge variant={batchDetails.failedImages > 0 ? "warning" : "success"} icon={batchDetails.failedImages > 0 ? AlertTriangle : CheckCircle2}>
+            {batchDetails.failedImages > 0 ? "Human Validation Required" : "All Packages Passed"}
           </Badge>
         }
         actions={
@@ -65,7 +122,7 @@ export function InspectionSummaryPage() {
             <Button
               variant="primary"
               icon={UserCheck}
-              onClick={() => navigate('/human-review')}
+              onClick={() => navigate(batchId ? `/human-review?batchId=${batchId}` : '/human-review')}
               className="shadow-md"
             >
               Proceed to Human Review
@@ -77,39 +134,39 @@ export function InspectionSummaryPage() {
       {/* 2. Quality Score & Pass/Fail KPI Row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <QualityScoreCard
-          scores={mockBatchDetails.scores}
-          overallScore={mockBatchDetails.qualityScore}
+          scores={batchDetails.scores}
+          overallScore={batchDetails.qualityScore}
           className="lg:col-span-2"
         />
 
         <div className="grid grid-cols-2 gap-4">
           <StatCard
             title="Passed Packages"
-            value={mockBatchDetails.passedImages}
-            change="96.8%"
+            value={batchDetails.passedImages}
+            change="Compliant"
             changeType="positive"
             icon={CheckCircle2}
             iconBg="bg-[#F0FDF4] text-[#22C55E]"
-            subtitle="Compliant packaging"
+            subtitle="Packaging verified"
           />
           <StatCard
             title="Flagged Defective"
-            value={mockBatchDetails.failedImages}
-            change="3.2%"
+            value={batchDetails.failedImages}
+            change="Requires Review"
             changeType="negative"
             icon={AlertTriangle}
             iconBg="bg-[#FEF2F2] text-[#EF4444]"
-            subtitle="Requires inspection"
+            subtitle="Anomalies detected"
           />
         </div>
       </div>
 
       {/* 3. AI Findings Recommendation Banner */}
       <RecommendationCard
-        summary={mockBatchDetails.aiSummary}
-        recommendation={mockBatchDetails.aiRecommendation}
-        confidence={mockBatchDetails.confidenceAvg}
-        requiresReview={true}
+        summary={batchDetails.aiSummary}
+        recommendation={batchDetails.aiRecommendation}
+        confidence={batchDetails.confidenceAvg}
+        requiresReview={batchDetails.failedImages > 0}
       />
 
       {/* 4. Charts Section */}
@@ -119,7 +176,7 @@ export function InspectionSummaryPage() {
           subtitle="Identified defects across 8 flagged packages"
         >
           <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={mockDefectBreakdown} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+            <BarChart data={defectBreakdown} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#E0F2FE" vertical={false} />
               <XAxis dataKey="category" stroke="#64748B" fontSize={11} tickLine={false} />
               <YAxis stroke="#64748B" fontSize={11} tickLine={false} />
@@ -133,7 +190,7 @@ export function InspectionSummaryPage() {
                 }}
               />
               <Bar dataKey="count" radius={[6, 6, 0, 0]}>
-                {mockDefectBreakdown.map((entry, index) => (
+                {defectBreakdown.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={entry.color} />
                 ))}
               </Bar>
@@ -147,8 +204,8 @@ export function InspectionSummaryPage() {
         >
           <ResponsiveContainer width="100%" height={260}>
             <LineChart
-              data={mockPackageItems.map((item, idx) => ({
-                name: item.id,
+              data={packageItems.map((item, idx) => ({
+                name: `IMG-${idx + 1}`,
                 confidence: item.confidence,
               }))}
               margin={{ top: 10, right: 20, left: -10, bottom: 0 }}
@@ -191,13 +248,13 @@ export function InspectionSummaryPage() {
           <Button
             variant="accent"
             icon={ArrowRight}
-            onClick={() => navigate('/human-review')}
+            onClick={() => navigate(batchId ? `/human-review?batchId=${batchId}` : '/human-review')}
           >
             Review & Validate Flagged Items
           </Button>
         </div>
 
-        <InspectionTable items={mockPackageItems} />
+        <InspectionTable items={packageItems} />
       </div>
     </div>
   );

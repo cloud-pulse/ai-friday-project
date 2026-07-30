@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { chatApi } from '../api/chat';
 import { PageHeader } from '../components/layout/PageHeader';
 import { Badge } from '../components/ui/Badge';
 import { Card } from '../components/ui/Card';
@@ -7,7 +8,6 @@ import { ConversationPanel } from '../components/chat/ConversationPanel';
 import { ChatInput } from '../components/chat/ChatInput';
 import { SuggestedPrompt } from '../components/chat/SuggestedPrompt';
 import { ReferenceCard } from '../components/chat/ReferenceCard';
-import { mockBatchDetails, mockRecentBatches } from '../data/mockData';
 import {
   Sparkles,
   Bot,
@@ -24,54 +24,22 @@ const exampleQuestions = [
   {
     category: "Batch Analysis",
     question: "Why did BATCH-2026-0888 fail inspection?",
-    response: {
-      text: "Analysis of BATCH-2026-0888 (Metformin 850mg):\n\n• Quality Score: 90.0% (Failed target threshold ≥ 95.0%)\n• Primary Anomaly: 32 Seal Integrity Failures concentrated on sealing jaw #2 during Night Shift.\n• Secondary Anomaly: 13 Misaligned Labels caused by feed roller mechanical drift.\n\nInspector Note (Marcus Vance): 'Sub-lot 2 quarantined due to roller temperature drop to 165°C.'",
-      aiCard: {
-        title: "Root Cause Finding: Sealing Roller Temperature Drop",
-        recommendation: "Recalibrate sealing jaw heater block #2 to 185°C ± 2°C and isolate sub-lot 2 before resuming line operations.",
-        confidence: 98.6,
-      },
-      referenceBatch: mockRecentBatches[3], // BATCH-2026-0888
-    },
   },
   {
     category: "Defect Trends",
     question: "What is the most common defect across production lines?",
-    response: {
-      text: "Across 148 analyzed batches (37,250 packages), the defect distribution is:\n\n1. Seal Integrity Failures — 38% (48 occurrences)\n2. Unreadable OCR Expiry Dates — 25% (32 occurrences)\n3. Label Misalignment — 19% (24 occurrences)\n4. Carton Damage — 11% (14 occurrences)\n5. Print Smudge — 7% (9 occurrences)\n\nSeal defects occur predominantly on Production Line A during night shifts when ambient temperature drops below 18°C.",
-      aiCard: {
-        title: "Trend Finding: Line A Night Shift Seal Anomalies",
-        recommendation: "Schedule preventative maintenance for Line A sealing rollers and install automated ambient temperature sensors.",
-        confidence: 99.1,
-      },
-    },
   },
   {
     category: "Comparative Analytics",
     question: "Compare BATCH-2026-0891 with previous batches.",
-    response: {
-      text: "Comparative Analysis: BATCH-2026-0891 vs Historical Baseline:\n\n• BATCH-2026-0891: Quality Score 96.8% (Passed) | 8 Defects | 98.5% Packaging Integrity\n• BATCH-2026-0889: Quality Score 99.0% (Passed) | 2 Defects | 99.4% Packaging Integrity\n• BATCH-2026-0888: Quality Score 90.0% (Flagged) | 45 Defects | 85.2% Packaging Integrity\n\nBATCH-2026-0891 shows a +1.4% pass rate improvement compared to last week's average.",
-      referenceBatch: mockBatchDetails,
-    },
   },
   {
     category: "Operational Guidance",
     question: "Should production on Line A continue?",
-    response: {
-      text: "Current Status for Production Line A:\n\n• Current Batch (BATCH-2026-0891) achieved a 96.8% Quality Score (Compliant).\n• 8 minor seal anomalies were isolated to sub-lot 4 during Morning Shift.\n• EasyOCR verified 100% batch text consistency (BATCH: AMX-9941 | EXP: 09/2028).\n\nAssessment: Production may continue under active monitoring, provided sub-lot 4 units are destroyed per QA protocol.",
-      aiCard: {
-        title: "Line A Readiness: Approved with Conditions",
-        recommendation: "Maintain line speed at 250 units/min and re-verify sealing jaw temperature at 13:00.",
-        confidence: 97.8,
-      },
-    },
   },
   {
     category: "AI Explanation",
     question: "Explain the AI vision findings for package PKG-003.",
-    response: {
-      text: "Package PKG-003 Visual Inspection Breakdown:\n\n• Vision AI Confidence: 97.8%\n• Bounding Box Location: X:120, Y:80 (Top-right blister pocket)\n• Defect Classification: Foil Tear / Micro-leak\n• OCR Result: BATCH: AMX-9941 | EXP: 09/2028 (Text Verified)\n\nSingle-pass vision analysis detected a 1.2mm foil fracture across blister cavity 3. EasyOCR confirmed label text matches master batch records.",
-    },
   },
 ];
 
@@ -92,9 +60,42 @@ export function AIAssistantPage() {
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [showPrompts, setShowPrompts] = useState(true);
+  const [sessionId, setSessionId] = useState(null);
+  const [activeContext, setActiveContext] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  const handleSendMessage = (queryText) => {
-    if (!queryText || isGenerating) return;
+  useEffect(() => {
+    const initializeChat = async () => {
+      try {
+        const session = await chatApi.createSession();
+        setSessionId(session.id);
+        
+        // Fetch the most recent batch to provide conversational context
+        const recentBatchesResponse = await batchesApi.getBatches();
+        if (recentBatchesResponse && recentBatchesResponse.items && recentBatchesResponse.items.length > 0) {
+          const latestBatch = recentBatchesResponse.items[0];
+          const summary = await batchesApi.getBatchSummary(latestBatch.id);
+          
+          setActiveContext({
+            ...latestBatch,
+            totalImages: summary.total_images,
+            passed: summary.passed,
+            failed: summary.failed,
+            qualityScore: summary.quality_score,
+            status: summary.status
+          });
+        }
+      } catch (err) {
+        console.error('Failed to load chat history or batch context:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    initializeChat();
+  }, []);
+
+  const handleSendMessage = async (queryText) => {
+    if (!queryText || isGenerating || !sessionId) return;
 
     const userMsg = {
       id: Date.now(),
@@ -106,40 +107,30 @@ export function AIAssistantPage() {
     setMessages((prev) => [...prev, userMsg]);
     setIsGenerating(true);
 
-    // Find matched mock response or generate realistic mock response
-    const matched = exampleQuestions.find(
-      (q) => q.question.toLowerCase() === queryText.toLowerCase()
-    );
+    try {
+      const response = await chatApi.sendMessage(sessionId, queryText);
 
-    setTimeout(() => {
-      let assistantMsg;
-      if (matched) {
-        assistantMsg = {
-          id: Date.now() + 1,
-          sender: 'assistant',
-          text: matched.response.text,
-          aiCard: matched.response.aiCard,
-          referenceBatch: matched.response.referenceBatch,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        };
-      } else {
-        assistantMsg = {
-          id: Date.now() + 1,
-          sender: 'assistant',
-          text: `Analysis for "${queryText}":\n\nHistorical inspection data across 148 production batches shows an overall 96.8% compliance rate. Vision AI confidence averages 98.4% across Line A, B, C, and D.\n\nInspector validation note: All anomalies require final inspector sign-off prior to batch release per 21 CFR Part 11 requirements.`,
-          aiCard: {
-            title: "Analysis Result: Quality Score Compliant",
-            recommendation: "Review recent batch summary in Dashboard or proceed to Human Review panel for manual sign-off.",
-            confidence: 98.2,
-          },
-          referenceBatch: mockBatchDetails,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        };
-      }
+      const assistantMsg = {
+        id: Date.now() + 1,
+        sender: 'assistant',
+        text: response.answer,
+        aiCard: null,
+        referenceBatch: response.context_used ? response.context_used.length > 0 ? response.context_used[0] : null : null,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      };
 
       setMessages((prev) => [...prev, assistantMsg]);
+    } catch (e) {
+      console.error(e);
+      setMessages((prev) => [...prev, {
+        id: Date.now() + 1,
+        sender: 'assistant',
+        text: "Sorry, I encountered an error while processing your request.",
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      }]);
+    } finally {
       setIsGenerating(false);
-    }, 1000);
+    }
   };
 
   return (
@@ -245,7 +236,7 @@ export function AIAssistantPage() {
               </span>
             </div>
 
-            <ReferenceCard batch={mockBatchDetails} />
+            {activeContext ? <ReferenceCard batch={activeContext} /> : <p className="text-sm text-gray-500">No active batch context.</p>}
           </Card>
         </div>
       </div>

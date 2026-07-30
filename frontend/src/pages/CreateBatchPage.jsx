@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { batchesApi } from '../api/batches';
+import { inspectionApi } from '../api/inspection';
 import { PageHeader } from '../components/layout/PageHeader';
 import { Card, CardTitle } from '../components/ui/Card';
 import { Badge } from '../components/ui/Badge';
@@ -68,43 +70,52 @@ export function CreateBatchPage() {
   };
 
   // Trigger Mock Analysis Workflow
-  const handleAnalyzeBatch = (e) => {
+  const handleAnalyzeBatch = async (e) => {
     e.preventDefault();
     if (images.length === 0) {
       alert('Please upload or select at least one production image for analysis.');
       return;
     }
 
-    setIsAnalyzing(true);
-    setAnalysisProgress(5);
-    setCurrentStep('Preprocessing production images with OpenCV...');
+    try {
+      setIsAnalyzing(true);
+      setAnalysisProgress(5);
+      setCurrentStep('Creating batch record...');
 
-    // Step 1: Preprocessing
-    setTimeout(() => {
-      setAnalysisProgress(30);
-      setCurrentStep('Extracting batch text & expiration dates via EasyOCR...');
-    }, 1000);
+      const newBatch = await batchesApi.createBatch({
+        name: formData.batchName,
+        production_line: formData.productionLine,
+        shift: formData.shift,
+        notes: formData.inspectorName + (formData.notes ? ' - ' + formData.notes : '')
+      });
 
-    // Step 2: OCR
-    setTimeout(() => {
-      setAnalysisProgress(65);
-      setCurrentStep('Running Llama-3.2 Vision AI packaging defect detection...');
-    }, 2200);
+      setCurrentStep('Uploading and analyzing images...');
 
-    // Step 3: Vision AI
-    setTimeout(() => {
-      setAnalysisProgress(90);
-      setCurrentStep('Calculating deterministic quality score & syncing LanceDB...');
-    }, 3400);
+      let completed = 0;
+      for (const image of images) {
+        let uploadFile = image;
+        if (!image.slice && image.preview) {
+          const response = await fetch(image.preview);
+          const blob = await response.blob();
+          uploadFile = new File([blob], image.name, { type: 'image/jpeg' });
+        }
+        await inspectionApi.uploadImage(newBatch.id, uploadFile);
+        completed += 1;
+        setAnalysisProgress(Math.floor(5 + (completed / images.length) * 90));
+      }
 
-    // Step 4: Finalize & Navigate
-    setTimeout(() => {
-      setAnalysisProgress(100);
       setCurrentStep('Batch analysis complete!');
+      setAnalysisProgress(100);
+
       setTimeout(() => {
-        navigate('/inspection-summary');
+        navigate(`/inspection-summary?batchId=${newBatch.id}`);
       }, 600);
-    }, 4400);
+
+    } catch (error) {
+      console.error('Error during analysis:', error);
+      alert('An error occurred during batch analysis.');
+      setIsAnalyzing(false);
+    }
   };
 
   return (

@@ -1,15 +1,12 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { batchesApi } from '../api/batches';
+import { reviewsApi } from '../api/reviews';
 import { PageHeader } from '../components/layout/PageHeader';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { ReviewForm } from '../components/inspection/ReviewForm';
-import {
-  mockBatchDetails,
-  mockPackageItems,
-  mockDefaultReviewData,
-} from '../data/mockData';
 import {
   UserCheck,
   CheckCircle2,
@@ -23,25 +20,65 @@ import {
 
 export function HumanReviewPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const batchId = searchParams.get('batchId');
 
-  // State for Review Form
-  const [reviewState, setReviewState] = useState(mockDefaultReviewData);
-  const [flaggedItems, setFlaggedItems] = useState(
-    mockPackageItems.filter((item) => item.status === 'Failed')
-  );
+  const [reviewState, setReviewState] = useState({
+    inspectorNotes: '',
+    rootCause: '',
+    correctiveActions: '',
+    finalDecision: 'Approved',
+  });
+  
+  const [flaggedItems, setFlaggedItems] = useState([]);
+  const [batchDetails, setBatchDetails] = useState({});
 
-  const handleReviewSubmit = (formData) => {
-    setReviewState(formData);
-    // Navigate to final approved report page
-    navigate('/reports');
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!batchId) {
+        navigate('/');
+        return;
+      }
+      try {
+        const [batch, results] = await Promise.all([
+          batchesApi.getBatchDetails(batchId),
+          batchesApi.getBatchResults(batchId)
+        ]);
+        setBatchDetails(batch);
+        setFlaggedItems(results.filter(item => item.status !== 'Passed'));
+      } catch (err) {
+        console.error(err);
+      }
+    };
+    fetchData();
+  }, [batchId]);
+
+  const handleReviewSubmit = async (formData) => {
+    if (!batchId) {
+      navigate('/reports');
+      return;
+    }
+    try {
+      await reviewsApi.submitReview(batchId, {
+        inspector_name: "Dr. Sarah Chen",
+        notes: formData.inspectorNotes,
+        root_cause: formData.rootCause,
+        corrective_actions: formData.correctiveActions.split('\n').filter(s => s.trim()),
+        decision: formData.finalDecision === "Approved" ? "approved" : (formData.finalDecision.includes("Approved") ? "approved" : "rejected")
+      });
+      navigate(`/reports?batchId=${batchId}`);
+    } catch (err) {
+      console.error(err);
+      alert('Failed to submit review');
+    }
   };
 
   return (
     <div className="space-y-8 pb-12">
       {/* 1. Page Header */}
       <PageHeader
-        title={`Human Review & Validation — ${mockBatchDetails.id}`}
-        description={`Inspector sign-off panel for ${mockBatchDetails.name}. Validate AI findings, log root cause, and define corrective action protocols.`}
+        title={`Human Review & Validation — ${batchDetails.name || 'Unknown Batch'}`}
+        description={`Inspector sign-off panel for ${batchDetails.name || 'Unknown Batch'}. Validate AI findings, log root cause, and define corrective action protocols.`}
         badge={
           <Badge variant="warning" icon={UserCheck}>
             Validation Required
@@ -51,7 +88,7 @@ export function HumanReviewPage() {
           <Button
             variant="secondary"
             icon={FileText}
-            onClick={() => navigate('/inspection-summary')}
+            onClick={() => navigate(batchId ? `/inspection-summary?batchId=${batchId}` : '/inspection-summary')}
           >
             View Inspection Summary
           </Button>

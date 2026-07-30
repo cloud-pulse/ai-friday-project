@@ -46,27 +46,27 @@ export function QualityScoreCard({ scores, overallScore = 96.8, className = '' }
         <div>
           <ProgressBar
             label="Packaging Integrity"
-            sublabel={`${scores?.packagingIntegrity || 98.5}%`}
-            progress={scores?.packagingIntegrity || 98.5}
-            variant={getScoreVariant(scores?.packagingIntegrity || 98.5)}
+            sublabel={`${scores?.packagingIntegrity ?? 98.5}%`}
+            progress={scores?.packagingIntegrity ?? 98.5}
+            variant={getScoreVariant(scores?.packagingIntegrity ?? 98.5)}
             size="sm"
           />
         </div>
         <div>
           <ProgressBar
             label="Label & OCR Accuracy"
-            sublabel={`${scores?.labelAccuracy || 99.2}%`}
-            progress={scores?.labelAccuracy || 99.2}
-            variant={getScoreVariant(scores?.labelAccuracy || 99.2)}
+            sublabel={`${scores?.labelAccuracy ?? 99.2}%`}
+            progress={scores?.labelAccuracy ?? 99.2}
+            variant={getScoreVariant(scores?.labelAccuracy ?? 99.2)}
             size="sm"
           />
         </div>
         <div>
           <ProgressBar
             label="Seal Quality"
-            sublabel={`${scores?.sealQuality || 92.4}%`}
-            progress={scores?.sealQuality || 92.4}
-            variant={getScoreVariant(scores?.sealQuality || 92.4)}
+            sublabel={`${scores?.sealQuality ?? 92.4}%`}
+            progress={scores?.sealQuality ?? 92.4}
+            variant={getScoreVariant(scores?.sealQuality ?? 92.4)}
             size="sm"
           />
         </div>

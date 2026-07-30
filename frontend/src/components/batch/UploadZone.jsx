@@ -54,6 +54,7 @@ export function UploadZone({ onFilesAdded, onLoadDemoFolder, isUploading = false
           <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
             <Button
               type="button"
+              accept=".png, .jpg, .jpeg" 
               variant="secondary"
               size="sm"
               icon={FolderUp}

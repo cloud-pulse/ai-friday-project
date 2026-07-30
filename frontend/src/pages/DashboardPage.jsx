@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { PageHeader } from '../components/layout/PageHeader';
 import { StatCard } from '../components/ui/StatCard';
 import { ChartCard } from '../components/ui/ChartCard';
@@ -8,13 +8,9 @@ import { SectionHeader } from '../components/dashboard/SectionHeader';
 import { RecentBatchTable } from '../components/dashboard/RecentBatchTable';
 import { Button } from '../components/ui/Button';
 import { useNavigate } from 'react-router-dom';
-import {
-  mockDashboardMetrics,
-  mockRecentBatches,
-  mockInspectionTrends,
-  mockDefectBreakdown,
-  mockSystemStatus,
-} from '../data/mockData';
+import { dashboardApi } from '../api/dashboard';
+import { systemApi } from '../api/system';
+import { batchesApi } from '../api/batches';
 import {
   Layers,
   CheckCircle2,
@@ -43,6 +39,66 @@ import {
 
 export function DashboardPage() {
   const navigate = useNavigate();
+  const [systemStatus, setSystemStatus] = useState([]);
+  const [recentBatches, setRecentBatches] = useState([]);
+  const [metrics, setMetrics] = useState({
+    totalBatches: 0,
+    totalPackagesInspected: 0,
+    overallPassRate: 0,
+    passRateChange: "+0%",
+    activeDefectsCount: 0,
+    avgInspectionTime: "0s",
+    humanReviewsPending: 0
+  });
+  const [inspectionTrends, setInspectionTrends] = useState([]);
+  const [defectBreakdown, setDefectBreakdown] = useState([]);
+
+  const fetchData = async () => {
+    try {
+      const [healthData, batchesData, metricsData, trendsData, defectsData] = await Promise.all([
+        systemApi.getStatus(),
+        batchesApi.getBatches(),
+        dashboardApi.getMetrics(),
+        dashboardApi.getTrends(),
+        dashboardApi.getDefects()
+      ]);
+
+      setSystemStatus(healthData);
+
+      const enrichedBatches = await Promise.all((batchesData.items || []).map(async (b) => {
+        try {
+          const summary = await batchesApi.getBatchSummary(b.id);
+          return {
+            id: b.id,
+            name: b.name,
+            line: b.production_line,
+            shift: b.shift,
+            timestamp: b.created_at,
+            totalImages: summary.total_images,
+            passed: summary.passed,
+            failed: summary.failed,
+            qualityScore: summary.quality_score,
+            status: summary.status === 'ready_for_review' ? 'Pending Review' : (summary.status === 'completed' ? 'Approved' : summary.status),
+            defectSummary: `${summary.failed} anomalies detected`,
+            inspector: "System",
+          };
+        } catch (e) {
+          return { ...b, timestamp: b.created_at, totalImages: 0, passed: 0, failed: 0, qualityScore: 0, defectSummary: "-", inspector: "System" };
+        }
+      }));
+
+      setRecentBatches(enrichedBatches.slice(0, 5));
+      setMetrics(metricsData);
+      setInspectionTrends(trendsData);
+      setDefectBreakdown(defectsData);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
 
   return (
     <div className="space-y-8 pb-12">
@@ -80,17 +136,17 @@ export function DashboardPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         <StatCard
           title="Total Batches Analyzed"
-          value={mockDashboardMetrics.totalBatches}
+          value={metrics.totalBatches}
           change="+12 this week"
           changeType="positive"
           icon={Layers}
           iconBg="bg-[#F0F9FF] text-[#0EA5E9]"
-          subtitle="37,250 total packages inspected"
+          subtitle={`${metrics.totalPackagesInspected} total packages inspected`}
         />
         <StatCard
           title="Overall Pass Rate"
-          value={`${mockDashboardMetrics.overallPassRate}%`}
-          change={mockDashboardMetrics.passRateChange}
+          value={`${metrics.overallPassRate}%`}
+          change={metrics.passRateChange}
           changeType="positive"
           icon={CheckCircle2}
           iconBg="bg-[#F0FDF4] text-[#22C55E]"
@@ -98,8 +154,8 @@ export function DashboardPage() {
         />
         <StatCard
           title="Active Defect Alerts"
-          value={mockDashboardMetrics.activeDefectsCount}
-          change="3 Pending Review"
+          value={metrics.activeDefectsCount}
+          change={`${metrics.humanReviewsPending} Pending Review`}
           changeType="negative"
           icon={AlertTriangle}
           iconBg="bg-[#FEF2F2] text-[#EF4444]"
@@ -107,7 +163,7 @@ export function DashboardPage() {
         />
         <StatCard
           title="Avg Inspection Speed"
-          value={mockDashboardMetrics.avgInspectionTime}
+          value={metrics.avgInspectionTime}
           change="75% faster"
           changeType="positive"
           icon={Clock}
@@ -125,7 +181,7 @@ export function DashboardPage() {
           className="lg:col-span-2"
         >
           <ResponsiveContainer width="100%" height={280}>
-            <AreaChart data={mockInspectionTrends} margin={{ top: 10, right: 20, left: -20, bottom: 0 }}>
+            <AreaChart data={inspectionTrends} margin={{ top: 10, right: 20, left: -20, bottom: 0 }}>
               <defs>
                 <linearGradient id="passRateGrad" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#0EA5E9" stopOpacity={0.3} />
@@ -164,7 +220,7 @@ export function DashboardPage() {
           subtitle="Distribution of identified packaging defects"
         >
           <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={mockDefectBreakdown} layout="vertical" margin={{ top: 0, right: 20, left: 30, bottom: 0 }}>
+            <BarChart data={defectBreakdown} layout="vertical" margin={{ top: 0, right: 20, left: 30, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#E0F2FE" horizontal={false} />
               <XAxis type="number" stroke="#64748B" fontSize={11} tickLine={false} />
               <YAxis dataKey="category" type="category" stroke="#075985" fontSize={11} tickLine={false} width={110} />
@@ -179,7 +235,7 @@ export function DashboardPage() {
                 formatter={(val) => [`${val} defect occurrences`, 'Count']}
               />
               <Bar dataKey="count" radius={[0, 6, 6, 0]}>
-                {mockDefectBreakdown.map((entry, index) => (
+                {defectBreakdown.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={entry.color} />
                 ))}
               </Bar>
@@ -204,7 +260,7 @@ export function DashboardPage() {
             </Button>
           }
         />
-        <RecentBatchTable batches={mockRecentBatches} />
+        <RecentBatchTable batches={recentBatches} />
       </div>
 
       {/* 5. System Status & AI Engine Insights */}
@@ -216,7 +272,7 @@ export function DashboardPage() {
           className="md:col-span-2"
         >
           <div className="space-y-3">
-            {mockSystemStatus.map((sys, idx) => (
+            {systemStatus.map((sys, idx) => (
               <div
                 key={idx}
                 className="flex items-center justify-between p-3 rounded-[10px] bg-[#F0F9FF]/60 border border-[#E0F2FE]"

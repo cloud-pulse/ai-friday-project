@@ -27,6 +27,8 @@ from services.report_service import ReportService
 from services.review_service import ReviewService
 from services.system_service import SystemService
 from services.vision_service import VisionModelService
+from services.batch_service import BatchService
+from services.dashboard_service import DashboardService
 
 
 @lru_cache
@@ -98,4 +100,12 @@ def get_report_service() -> ReportService:
     )
 
 
+@lru_cache
+def get_batch_service() -> BatchService:
+    client = get_lancedb_client()
+    return BatchService(BatchRepository(client), ResultRepository(client))
 
+@lru_cache
+def get_dashboard_service() -> DashboardService:
+    client = get_lancedb_client()
+    return DashboardService(BatchRepository(client), ResultRepository(client))

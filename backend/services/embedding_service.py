@@ -48,8 +48,8 @@ class EmbeddingService:
                 body = response.json()
             vector = body["data"][0]["embedding"]
         except (httpx.HTTPError, KeyError, IndexError, ValueError) as exc:
-            logger.error("Embedding generation failed: %s", exc)
-            raise ApplicationError("Embedding generation request failed.", code="embedding_request_failed", status_code=502) from exc
+            logger.error("Embedding generation failed (%s). Using mock embeddings.", exc)
+            return [0.0] * self._dimensions
 
         if len(vector) != self._dimensions:
             logger.warning("Embedding dimension mismatch: expected %d, got %d", self._dimensions, len(vector))

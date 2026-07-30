@@ -36,3 +36,27 @@ async def inspect_image(
         content=content,
     )
     return InspectionProcessResponse(result=result)
+
+from fastapi.responses import FileResponse
+from database.lancedb.repositories import ImageRepository
+from api.dependencies import get_lancedb_client
+
+@router.get(
+    "/images/{image_id}",
+    summary="Get an uploaded image by ID",
+)
+async def get_image(
+    image_id: UUID,
+    client = Depends(get_lancedb_client),
+):
+    repo = ImageRepository(client)
+    image = repo.get(image_id)
+    if not image:
+        raise ApplicationError("Image not found", code="image_not_found", status_code=404)
+        
+    from config.settings import settings
+    file_path = settings.base_dir / image.storage_path
+    if not file_path.exists():
+        raise ApplicationError("Image file not found on disk", code="file_not_found", status_code=404)
+        
+    return FileResponse(file_path, media_type=image.media_type)
