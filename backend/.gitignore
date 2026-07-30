@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.env
+.venv/
+logs/*.log
+uploads/*
+!uploads/.gitkeep
+reports/*
+!reports/.gitkeep
+database/lancedb/*.lance/
+database/lancedb/*.lance
