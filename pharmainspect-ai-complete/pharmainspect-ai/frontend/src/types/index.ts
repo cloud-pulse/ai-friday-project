@@ -1,0 +1,5 @@
+export type Metrics = {images_processed:number;invalid:number;passed:number;failed:number;quality_score:number;packaging_integrity:number;label_accuracy:number;seal_quality:number;average_confidence:number;defect_counts:Record<string,number>};
+export type Inspection = {id:string;image_name:string;packaging_integrity:number;seal_quality:number;label_accuracy:number;ocr_verified:boolean;defects:string[];confidence:number;ai_summary:string;passed:boolean;valid_for_inspection:boolean};
+export type Review = {inspector_notes:string;root_cause:string;corrective_actions:string;decision:'pending'|'approve'|'reject'|'hold';approved_by:string;reviewed_at?:string|null};
+export type Batch = {id:string;name:string;production_line:string;shift:string;notes:string;created_at:string;status:string;metrics:Metrics;inspections:Inspection[];review:Review};
+export type Dashboard = {total_batches:number;total_images:number;invalid_images:number;overall_quality:number;needs_review:number;recent_batches:Batch[]};

@@ -1,0 +1,11 @@
+import axios from 'axios';
+import type { Batch, Dashboard, Review } from '../types';
+const api = axios.create({baseURL: import.meta.env.VITE_API_URL ?? 'http://localhost:8000/api'});
+export const getDashboard = async () => (await api.get<Dashboard>('/dashboard')).data;
+export const getBatches = async () => (await api.get<Batch[]>('/batches')).data;
+export const getBatch = async (id:string) => (await api.get<Batch>(`/batches/${id}`)).data;
+export const createBatch = async (payload:{name:string;production_line:string;shift:string;notes:string}) => (await api.post<Batch>('/batches',payload)).data;
+export const analyzeBatch = async (id:string, files:File[]) => {const form=new FormData();files.forEach(x=>form.append('files',x));return (await api.post<Batch>(`/batches/${id}/analyze`,form)).data;};
+export const reviewBatch = async (id:string,payload:Review) => (await api.put<Batch>(`/batches/${id}/review`,payload)).data;
+export const askAssistant = async (question:string) => (await api.post<{answer:string}>('/assistant',{question})).data.answer;
+export const reportUrl = (id:string) => `${api.defaults.baseURL}/batches/${id}/report`;
